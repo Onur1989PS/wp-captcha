@@ -6,8 +6,7 @@ Version: 1.0.0
 
 if (!defined('ABSPATH')) exit;
 
-define('SAAT_CAPTCHA_LOCK_MINUTES', 15);
-
+define('SAAT_CAPTCHA_LOCK_MINUTES', 0.1);
 
 /**
  * SHORTCODE
@@ -20,13 +19,8 @@ add_shortcode('saat_captcha', function () {
     set_transient("captcha_$token", ['hour' => $hour], 600);
 
     ob_start(); ?>
-	
+
 <style>
-
-/* =========================
-   BASE
-========================= */
-
 .saat-captcha {
     font-family: Arial, sans-serif;
 }
@@ -35,32 +29,20 @@ add_shortcode('saat_captcha', function () {
     margin-top: 8px;
     font-size: 14px;
     color: #333;
-	font-weight: bold;
+    font-weight: bold;
 }
-
-/* =========================
-   LAYOUT
-========================= */
 
 .saat-captcha .canvas-wrap {
     padding: 10px 0;
-	width: 100%;
-	clear: both;
+    width: 100%;
+    clear: both;
 }
-
-/* =========================
-   CANVAS
-========================= */
 
 .saat-captcha canvas {
-    transition: 0.2s ease;
-	border-radius: 50%;
-	background-color: #fff;
+    border-radius: 50%;
+    background-color: #fff;
+    transition: transform 0.2s ease, opacity 0.2s ease, filter 0.2s ease;
 }
-
-/* =========================
-   CURSOR STATES
-========================= */
 
 .saat-captcha .clock-user {
     cursor: pointer;
@@ -74,15 +56,19 @@ add_shortcode('saat_captcha', function () {
     cursor: default;
 }
 
-/* hover only active */
+/* HOVER ONLY ACTIVE STATE */
 .saat-captcha:not(.is-locked):not(.is-valid) .clock-user:hover {
     transform: scale(1.03);
 }
 
-/* =========================
-   LOCK VISUAL
-========================= */
+/* HARD BLOCK (GARANTİ) */
+.saat-captcha.is-locked .clock-user,
+.saat-captcha.is-valid .clock-user {
+    transform: none !important;
+    pointer-events: none;
+}
 
+/* VISUAL STATES */
 .saat-captcha.is-locked canvas {
     opacity: 0.4;
     filter: grayscale(1);
@@ -93,10 +79,6 @@ add_shortcode('saat_captcha', function () {
     filter: none;
 }
 
-/* =========================
-   TIMER COLORS
-========================= */
-
 .saat-captcha.is-locked .lock-timer {
     color: red;
 }
@@ -104,7 +86,6 @@ add_shortcode('saat_captcha', function () {
 .saat-captcha.is-valid .lock-timer {
     color: green;
 }
-
 </style>
 
 <div class="saat-captcha" data-token="<?= esc_attr($token) ?>">
@@ -140,28 +121,17 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     let dragging = false;
 
     let locked = false;
-
     let targetHour = null;
 
-
-    // =========================
-    // MESSAGE
-    // =========================
     function setTimerMessage(text, type="info"){
         const msg = el.querySelector(".lock-timer");
-
         msg.innerText = text;
-
         msg.style.color =
             type === "success" ? "green" :
             type === "error" ? "red" :
             "#333";
     }
 
-
-    // =========================
-    // DRAW CLOCK
-    // =========================
     function drawClock(ctx, hour, type="normal"){
 
         ctx.setTransform(1,0,0,1,0,0);
@@ -212,28 +182,26 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
         ctx.stroke();
     }
 
-
-    // =========================
-    // RESET USER CLOCK
-    // =========================
     function resetUserClock(){
         selectedHour = null;
         drawClock(uctx, null);
     }
 
-
-    // =========================
-    // LOCK TIMER
-    // =========================
     let lockInterval = null;
     let lockEndTime = null;
-
 
     function startLockTimer(seconds){
 
         locked = true;
 
+        // 🔥 STATE SYNC (KRİTİK FIX)
+        el.classList.add("is-locked");
+        el.classList.remove("is-valid");
+
         resetUserClock();
+
+        targetHour = null;
+        drawClock(tctx, null);
 
         targetCanvas.style.opacity = "0.3";
         userCanvas.style.opacity = "0.3";
@@ -247,16 +215,17 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
             const diff = lockEndTime - Date.now();
 
             if(diff <= 0){
-                clearInterval(lockInterval);
 
+                clearInterval(lockInterval);
                 locked = false;
+
+                el.classList.remove("is-locked");
 
                 targetCanvas.style.opacity = "1";
                 userCanvas.style.opacity = "1";
 
                 setTimerMessage("Artık deneyebilirsiniz", "success");
 
-                // 🔥 CRITICAL FIX: SERVER SIDE REFRESH
                 fetch("<?= admin_url('admin-ajax.php'); ?>", {
                     method: "POST",
                     headers: {'Content-Type':'application/x-www-form-urlencoded'},
@@ -264,7 +233,6 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
                 })
                 .then(r => r.json())
                 .then(d => {
-
                     targetHour = d.hour;
                     drawClock(tctx, targetHour);
                 });
@@ -285,10 +253,6 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
         lockInterval = setInterval(tick, 1000);
     }
 
-
-    // =========================
-    // INIT CLOCK
-    // =========================
     fetch("<?= admin_url('admin-ajax.php'); ?>?action=get_clock&token="+token)
     .then(r=>r.json())
     .then(d=>{
@@ -298,13 +262,8 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
         }
     });
 
-
     resetUserClock();
 
-
-    // =========================
-    // USER INPUT
-    // =========================
     function updateClock(e){
 
         if(locked || el.dataset.valid === "1") return;
@@ -322,7 +281,6 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
         drawClock(uctx, selectedHour);
     }
 
-
     userCanvas.addEventListener("mousedown", e=>{
         if(locked || el.dataset.valid === "1") return;
 
@@ -331,11 +289,9 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
         updateClock(e);
     });
 
-
     userCanvas.addEventListener("mousemove", e=>{
         if(dragging) updateClock(e);
     });
-
 
     window.addEventListener("mouseup", ()=>{
 
@@ -363,6 +319,8 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
             if(res.success){
 
                 el.dataset.valid = "1";
+                el.classList.add("is-valid");
+
                 locked = true;
 
                 el.querySelector(".token-field").value = token;
@@ -370,7 +328,6 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
                 el.querySelector(".moves-hidden").value = moveCount;
 
                 drawClock(uctx, selectedHour, "success");
-
                 userCanvas.style.pointerEvents = "none";
 
                 setTimerMessage(res.message, "success");
@@ -383,14 +340,9 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
         });
     });
 
-
-    // =========================
-    // STATUS CHECK
-    // =========================
     fetch("<?= admin_url('admin-ajax.php'); ?>?action=captcha_status")
     .then(r=>r.json())
     .then(res=>{
-
         if(res.locked){
             startLockTimer(res.remaining || 60);
         }
@@ -398,10 +350,6 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
 
 });
 
-
-// =========================
-// FORM BLOCK
-// =========================
 document.addEventListener("submit", function(e){
 
     const c = document.querySelector(".saat-captcha");
@@ -419,9 +367,8 @@ document.addEventListener("submit", function(e){
 return ob_get_clean();
 });
 
-
 /**
- * GET CLOCK
+ * AJAX FUNCTIONS (unchanged)
  */
 add_action('wp_ajax_get_clock','get_clock');
 add_action('wp_ajax_nopriv_get_clock','get_clock');
@@ -437,10 +384,6 @@ function get_clock(){
     wp_send_json(['hour'=>$data['hour']]);
 }
 
-
-/**
- * REFRESH CLOCK (CRITICAL FIX)
- */
 add_action('wp_ajax_refresh_clock','refresh_clock');
 add_action('wp_ajax_nopriv_refresh_clock','refresh_clock');
 
@@ -456,15 +399,9 @@ function refresh_clock(){
 
     set_transient("captcha_$token", ['hour'=>$hour], 600);
 
-    wp_send_json([
-        'hour'=>$hour
-    ]);
+    wp_send_json(['hour'=>$hour]);
 }
 
-
-/**
- * CHECK CLOCK
- */
 add_action('wp_ajax_check_clock','check_clock');
 add_action('wp_ajax_nopriv_check_clock','check_clock');
 
@@ -499,10 +436,8 @@ function check_clock(){
     }
 
     if($hour == $data['hour']){
-
         set_transient("captcha_passed_$token",1,600);
         delete_transient($fail_key);
-
         wp_send_json(['success'=>true,'message'=>'Doğru!']);
     }
 
@@ -512,10 +447,9 @@ function check_clock(){
     if($fails >= 3){
 
         $seconds = SAAT_CAPTCHA_LOCK_MINUTES * 60;
-
         $lock_until = time() + $seconds;
-        set_transient($lock_key, $lock_until, $seconds);
 
+        set_transient($lock_key, $lock_until, $seconds);
         delete_transient($fail_key);
 
         wp_send_json([
@@ -533,10 +467,6 @@ function check_clock(){
     ]);
 }
 
-
-/**
- * CAPTCHA STATUS
- */
 add_action('wp_ajax_captcha_status','captcha_status');
 add_action('wp_ajax_nopriv_captcha_status','captcha_status');
 
@@ -546,7 +476,7 @@ function captcha_status(){
     $lock_key = "captcha_lock_ip_$ip";
 
     $lock_until = get_transient($lock_key);
-	
+
 	/* SÜRE SIFIRLAMA */
 
 	//delete_transient($lock_key);
@@ -567,10 +497,6 @@ function captcha_status(){
     ]);
 }
 
-
-/**
- * VERIFY
- */
 function saat_captcha_verify(){
 
     if(empty($_POST)) return false;
@@ -589,10 +515,6 @@ function saat_captcha_verify(){
     return true;
 }
 
-
-/**
- * FORM HOOKS
- */
 add_action('login_form', function(){ echo do_shortcode('[saat_captcha]'); });
 add_action('register_form', function(){ echo do_shortcode('[saat_captcha]'); });
 add_action('lostpassword_form', function(){ echo do_shortcode('[saat_captcha]'); });
