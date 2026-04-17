@@ -20,19 +20,105 @@ add_shortcode('saat_captcha', function () {
     set_transient("captcha_$token", ['hour' => $hour], 600);
 
     ob_start(); ?>
+	
+<style>
+
+/* =========================
+   BASE
+========================= */
+
+.saat-captcha {
+    font-family: Arial, sans-serif;
+}
+
+.saat-captcha .lock-timer {
+    margin-top: 8px;
+    font-size: 14px;
+    color: #333;
+	font-weight: bold;
+}
+
+/* =========================
+   LAYOUT
+========================= */
+
+.saat-captcha .canvas-wrap {
+    padding: 10px 0;
+	width: 100%;
+	clear: both;
+}
+
+/* =========================
+   CANVAS
+========================= */
+
+.saat-captcha canvas {
+    transition: 0.2s ease;
+	border-radius: 50%;
+	background-color: #fff;
+}
+
+/* =========================
+   CURSOR STATES
+========================= */
+
+.saat-captcha .clock-user {
+    cursor: pointer;
+}
+
+.saat-captcha.is-locked .clock-user {
+    cursor: not-allowed;
+}
+
+.saat-captcha.is-valid .clock-user {
+    cursor: default;
+}
+
+/* hover only active */
+.saat-captcha:not(.is-locked):not(.is-valid) .clock-user:hover {
+    transform: scale(1.03);
+}
+
+/* =========================
+   LOCK VISUAL
+========================= */
+
+.saat-captcha.is-locked canvas {
+    opacity: 0.4;
+    filter: grayscale(1);
+}
+
+.saat-captcha.is-valid canvas {
+    opacity: 1;
+    filter: none;
+}
+
+/* =========================
+   TIMER COLORS
+========================= */
+
+.saat-captcha.is-locked .lock-timer {
+    color: red;
+}
+
+.saat-captcha.is-valid .lock-timer {
+    color: green;
+}
+
+</style>
 
 <div class="saat-captcha" data-token="<?= esc_attr($token) ?>">
 
-    <div style="display:flex; gap:20px;">
-        <canvas width="100" height="100" class="clock-target" style="border-radius:50%;background:#fff"></canvas>
-        <canvas width="100" height="100" class="clock-user" style="border-radius:50%;background:#fff"></canvas>
+    <div class="canvas-wrap">
+        <canvas width="100" height="100" class="clock-target"></canvas>
+        <canvas width="100" height="100" class="clock-user"></canvas>
     </div>
 
-    <input type="hidden" class="token-field">
-    <input type="hidden" class="hour-hidden">
-    <input type="hidden" class="moves-hidden">
+    <input type="hidden" name="captcha_token" class="token-field">
+    <input type="hidden" name="captcha_hour" class="hour-hidden">
+    <input type="hidden" name="captcha_moves" class="moves-hidden">
 
-    <p class="lock-timer"></p>
+    <div class="lock-timer"></div>
 </div>
 
 <script>
@@ -46,31 +132,24 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     const tctx = targetCanvas.getContext("2d");
     const uctx = userCanvas.getContext("2d");
 
-    const c = 50;
+    const size = 100;
+    const c = size / 2;
 
     let selectedHour = null;
     let moveCount = 0;
     let dragging = false;
 
     let locked = false;
-    let lockReason = null;
+
     let targetHour = null;
 
 
     // =========================
-    // CURSOR CONTROL
+    // MESSAGE
     // =========================
-    function updateCursor(){
-        if(locked || el.dataset.valid === "1"){
-            userCanvas.style.cursor = "default";
-        } else {
-            userCanvas.style.cursor = "pointer";
-        }
-    }
-
-
     function setTimerMessage(text, type="info"){
         const msg = el.querySelector(".lock-timer");
+
         msg.innerText = text;
 
         msg.style.color =
@@ -80,14 +159,19 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     }
 
 
-    function drawClock(ctx, hour, type="normal", question=false){
+    // =========================
+    // DRAW CLOCK
+    // =========================
+    function drawClock(ctx, hour, type="normal"){
 
         ctx.setTransform(1,0,0,1,0,0);
-        ctx.clearRect(0,0,100,100);
+        ctx.clearRect(0,0,size,size);
 
-        ctx.strokeStyle = (type==="success") ? "green" :
-                          (type==="error") ? "red" : "#111";
+        let color = "#111";
+        if(type==="success") color="green";
+        if(type==="error") color="red";
 
+        ctx.strokeStyle = color;
         ctx.lineWidth = 2;
 
         ctx.beginPath();
@@ -107,8 +191,7 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
             ctx.stroke();
         }
 
-        // FAIL → ?
-        if(question || hour === null){
+        if(hour === null){
             ctx.font = "bold 34px sans-serif";
             ctx.fillStyle = "#666";
             ctx.textAlign = "center";
@@ -130,27 +213,30 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     }
 
 
+    // =========================
+    // RESET USER CLOCK
+    // =========================
     function resetUserClock(){
         selectedHour = null;
         drawClock(uctx, null);
     }
 
 
+    // =========================
+    // LOCK TIMER
+    // =========================
     let lockInterval = null;
     let lockEndTime = null;
 
 
-    function startLockTimer(seconds, reason=null){
+    function startLockTimer(seconds){
 
         locked = true;
-        lockReason = reason;
 
         resetUserClock();
 
         targetCanvas.style.opacity = "0.3";
         userCanvas.style.opacity = "0.3";
-
-        userCanvas.style.cursor = "default";
 
         lockEndTime = Date.now() + seconds * 1000;
 
@@ -164,15 +250,13 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
                 clearInterval(lockInterval);
 
                 locked = false;
-                lockReason = null;
 
                 targetCanvas.style.opacity = "1";
                 userCanvas.style.opacity = "1";
 
                 setTimerMessage("Artık deneyebilirsiniz", "success");
 
-                updateCursor();
-
+                // 🔥 CRITICAL FIX: SERVER SIDE REFRESH
                 fetch("<?= admin_url('admin-ajax.php'); ?>", {
                     method: "POST",
                     headers: {'Content-Type':'application/x-www-form-urlencoded'},
@@ -180,6 +264,7 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
                 })
                 .then(r => r.json())
                 .then(d => {
+
                     targetHour = d.hour;
                     drawClock(tctx, targetHour);
                 });
@@ -201,7 +286,9 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     }
 
 
+    // =========================
     // INIT CLOCK
+    // =========================
     fetch("<?= admin_url('admin-ajax.php'); ?>?action=get_clock&token="+token)
     .then(r=>r.json())
     .then(d=>{
@@ -209,13 +296,15 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
             targetHour = d.hour;
             drawClock(tctx, targetHour);
         }
-        updateCursor();
     });
 
+
     resetUserClock();
-    updateCursor();
 
 
+    // =========================
+    // USER INPUT
+    // =========================
     function updateClock(e){
 
         if(locked || el.dataset.valid === "1") return;
@@ -237,22 +326,21 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     userCanvas.addEventListener("mousedown", e=>{
         if(locked || el.dataset.valid === "1") return;
 
+        setTimerMessage("", "info");
         dragging = true;
-        userCanvas.style.cursor = "grabbing";
-
         updateClock(e);
     });
+
 
     userCanvas.addEventListener("mousemove", e=>{
         if(dragging) updateClock(e);
     });
 
+
     window.addEventListener("mouseup", ()=>{
 
         if(!dragging) return;
         dragging = false;
-
-        updateCursor();
 
         fetch("<?= admin_url('admin-ajax.php'); ?>",{
             method:"POST",
@@ -267,13 +355,8 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
         .then(res=>{
 
             if(res.locked){
-
-                startLockTimer(res.remaining || 60, res.reason);
-
-                if(res.reason === "fail_lock"){
-                    drawClock(tctx, null, "normal", true);
-                }
-
+                startLockTimer(res.remaining || 60);
+                setTimerMessage("Kilit aktif", "error");
                 return;
             }
 
@@ -287,13 +370,13 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
                 el.querySelector(".moves-hidden").value = moveCount;
 
                 drawClock(uctx, selectedHour, "success");
-                userCanvas.style.pointerEvents = "none";
 
-                userCanvas.style.cursor = "default";
+                userCanvas.style.pointerEvents = "none";
 
                 setTimerMessage(res.message, "success");
 
             } else {
+
                 drawClock(uctx, selectedHour, "error");
                 setTimerMessage(res.message, "error");
             }
@@ -301,18 +384,24 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     });
 
 
+    // =========================
+    // STATUS CHECK
+    // =========================
     fetch("<?= admin_url('admin-ajax.php'); ?>?action=captcha_status")
     .then(r=>r.json())
     .then(res=>{
+
         if(res.locked){
-            startLockTimer(res.remaining || 60, "time_lock");
+            startLockTimer(res.remaining || 60);
         }
-        updateCursor();
     });
 
 });
 
 
+// =========================
+// FORM BLOCK
+// =========================
 document.addEventListener("submit", function(e){
 
     const c = document.querySelector(".saat-captcha");
@@ -332,7 +421,7 @@ return ob_get_clean();
 
 
 /**
- * BACKEND (unchanged logic)
+ * GET CLOCK
  */
 add_action('wp_ajax_get_clock','get_clock');
 add_action('wp_ajax_nopriv_get_clock','get_clock');
@@ -349,6 +438,9 @@ function get_clock(){
 }
 
 
+/**
+ * REFRESH CLOCK (CRITICAL FIX)
+ */
 add_action('wp_ajax_refresh_clock','refresh_clock');
 add_action('wp_ajax_nopriv_refresh_clock','refresh_clock');
 
@@ -356,13 +448,23 @@ function refresh_clock(){
 
     $token = sanitize_text_field($_POST['token'] ?? '');
 
+    if(!$token){
+        wp_send_json_error();
+    }
+
     $hour = rand(0,11);
+
     set_transient("captcha_$token", ['hour'=>$hour], 600);
 
-    wp_send_json(['hour'=>$hour]);
+    wp_send_json([
+        'hour'=>$hour
+    ]);
 }
 
 
+/**
+ * CHECK CLOCK
+ */
 add_action('wp_ajax_check_clock','check_clock');
 add_action('wp_ajax_nopriv_check_clock','check_clock');
 
@@ -397,6 +499,7 @@ function check_clock(){
     }
 
     if($hour == $data['hour']){
+
         set_transient("captcha_passed_$token",1,600);
         delete_transient($fail_key);
 
@@ -409,14 +512,14 @@ function check_clock(){
     if($fails >= 3){
 
         $seconds = SAAT_CAPTCHA_LOCK_MINUTES * 60;
-        $lock_until = time() + $seconds;
 
+        $lock_until = time() + $seconds;
         set_transient($lock_key, $lock_until, $seconds);
+
         delete_transient($fail_key);
 
         wp_send_json([
             'locked'=>true,
-            'reason'=>'fail_lock',
             'remaining'=>$seconds,
             'message'=>'Kilit aktif'
         ]);
@@ -431,6 +534,9 @@ function check_clock(){
 }
 
 
+/**
+ * CAPTCHA STATUS
+ */
 add_action('wp_ajax_captcha_status','captcha_status');
 add_action('wp_ajax_nopriv_captcha_status','captcha_status');
 
@@ -440,6 +546,11 @@ function captcha_status(){
     $lock_key = "captcha_lock_ip_$ip";
 
     $lock_until = get_transient($lock_key);
+	
+	/* SÜRE SIFIRLAMA */
+
+	//delete_transient($lock_key);
+	//wp_send_json(['locked'=>false]);
 
     if(!$lock_until){
         wp_send_json(['locked'=>false]);
@@ -462,6 +573,8 @@ function captcha_status(){
  */
 function saat_captcha_verify(){
 
+    if(empty($_POST)) return false;
+
     $token = sanitize_text_field($_POST['captcha_token'] ?? '');
 
     if(!$token) return false;
@@ -480,6 +593,7 @@ function saat_captcha_verify(){
 /**
  * FORM HOOKS
  */
-add_action('login_form', fn()=>print do_shortcode('[saat_captcha]'));
-add_action('register_form', fn()=>print do_shortcode('[saat_captcha]'));
-add_action('lostpassword_form', fn()=>print do_shortcode('[saat_captcha]'));
+add_action('login_form', function(){ echo do_shortcode('[saat_captcha]'); });
+add_action('register_form', function(){ echo do_shortcode('[saat_captcha]'); });
+add_action('lostpassword_form', function(){ echo do_shortcode('[saat_captcha]'); });
+add_action('comment_form', function(){ echo do_shortcode('[saat_captcha]'); });
