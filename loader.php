@@ -26,7 +26,7 @@ add_shortcode('saat_captcha', function () {
 }
 
 .saat-captcha .lock-timer {
-    margin-top: 8px;
+    margin-bottom: 8px;
     font-size: 14px;
     color: #333;
     font-weight: bold;
