@@ -6,7 +6,7 @@ Version: 1.0.0
 
 if (!defined('ABSPATH')) exit;
 
-define('SAAT_CAPTCHA_LOCK_MINUTES', 0.1);
+define('SAAT_CAPTCHA_LOCK_MINUTES', 15);
 
 /**
  * SHORTCODE
@@ -46,6 +46,10 @@ add_shortcode('saat_captcha', function () {
 
 .saat-captcha .clock-user {
     cursor: pointer;
+}
+
+.saat-captcha .clock-target {
+	margin-right: 10px;
 }
 
 .saat-captcha.is-locked .clock-user {
@@ -312,7 +316,7 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
 
             if(res.locked){
                 startLockTimer(res.remaining || 60);
-                setTimerMessage("Kilit aktif", "error");
+                setTimerMessage("Kilit Aktif", "error");
                 return;
             }
 
