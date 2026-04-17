@@ -1,7 +1,7 @@
 <?php
 /*
-Plugin Name: Saat Captcha Pro Dual FINAL
-Version: 7.0
+Plugin Name: Saat Captcha Pro
+Version: 1.0.0
 */
 
 if (!defined('ABSPATH')) exit;
@@ -17,22 +17,22 @@ add_shortcode('saat_captcha', function () {
     $token = wp_generate_uuid4();
     $hour = rand(0, 11);
 
-    set_transient("captcha_$token", ['hour'=>$hour], 600);
+    set_transient("captcha_$token", ['hour' => $hour], 600);
 
     ob_start(); ?>
 
 <div class="saat-captcha" data-token="<?= esc_attr($token) ?>">
 
-    <div style="padding: 10px 0;">
-        <canvas width="100" height="100" class="clock-target" style="border-radius: 50%; margin-right: 10px;"></canvas>
-        <canvas width="100" height="100" class="clock-user" style="border-radius: 50%;"></canvas>
+    <div style="display:flex; gap:20px;">
+        <canvas width="100" height="100" class="clock-target"></canvas>
+        <canvas width="100" height="100" class="clock-user"></canvas>
     </div>
 
     <input type="hidden" name="captcha_token" class="token-field">
     <input type="hidden" name="captcha_hour" class="hour-hidden">
     <input type="hidden" name="captcha_moves" class="moves-hidden">
 
-    <p class="lock-timer" style="margin: 10px 0"></p>
+    <p class="lock-timer"></p>
 </div>
 
 <script>
@@ -52,16 +52,16 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     let selectedHour = null;
     let moveCount = 0;
     let dragging = false;
+
     let locked = false;
 
-    let lockInterval = null;
-    let lockEndTime = null;
+    let targetHour = null;
 
 
     // =========================
-    // UI MESSAGE
+    // MESSAGE
     // =========================
-    function setTimerMessage(text, type = "info") {
+    function setTimerMessage(text, type="info"){
         const msg = el.querySelector(".lock-timer");
 
         msg.innerText = text;
@@ -74,68 +74,43 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
 
 
     // =========================
-    // RESET USER CLOCK
-    // =========================
-    function resetUserClock() {
-        selectedHour = null;
-        drawClock(uctx, null);
-    }
-
-
-    // =========================
-    // CURSOR STATE MANAGER
-    // =========================
-    function updateCursor() {
-        if (el.dataset.valid === "1") {
-            userCanvas.style.cursor = "default";
-        } else if (el.dataset.locked === "1") {
-            userCanvas.style.cursor = "not-allowed";
-        } else {
-            userCanvas.style.cursor = "pointer";
-        }
-    }
-
-
-    // =========================
     // DRAW CLOCK
     // =========================
-    function drawClock(ctx, hour, type = "normal") {
+    function drawClock(ctx, hour, type="normal"){
 
-        ctx.save();
-		ctx.fillStyle = "#fff";
-		ctx.fillRect(0, 0, size, size);
-		ctx.strokeStyle = "#111";
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.clearRect(0,0,size,size);
+
         let color = "#111";
-        if (type === "success") color = "green";
-        if (type === "error") color = "red";
+        if(type==="success") color="green";
+        if(type==="error") color="red";
 
-        ctx.lineWidth = 2;
         ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
 
         ctx.beginPath();
-        ctx.arc(c, c, 45, 0, Math.PI * 2);
+        ctx.arc(c,c,45,0,Math.PI*2);
         ctx.stroke();
 
-        for (let i = 0; i < 12; i++) {
-            let a = i * 30;
-            let x1 = c + 35 * Math.sin(a * Math.PI / 180);
-            let y1 = c - 35 * Math.cos(a * Math.PI / 180);
-            let x2 = c + 42 * Math.sin(a * Math.PI / 180);
-            let y2 = c - 42 * Math.cos(a * Math.PI / 180);
+        for(let i=0;i<12;i++){
+            let a=i*30;
+            let x1=c+35*Math.sin(a*Math.PI/180);
+            let y1=c-35*Math.cos(a*Math.PI/180);
+            let x2=c+42*Math.sin(a*Math.PI/180);
+            let y2=c-42*Math.cos(a*Math.PI/180);
 
             ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
+            ctx.moveTo(x1,y1);
+            ctx.lineTo(x2,y2);
             ctx.stroke();
         }
 
-        if (hour === null) {
+        if(hour === null){
             ctx.font = "bold 34px sans-serif";
             ctx.fillStyle = "#666";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillText("?", c, c);
-            ctx.restore();
             return;
         }
 
@@ -143,49 +118,71 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
 
         ctx.beginPath();
         ctx.lineWidth = 4;
-        ctx.moveTo(c, c);
+        ctx.moveTo(c,c);
         ctx.lineTo(
-            c + 25 * Math.sin(angle * Math.PI / 180),
-            c - 25 * Math.cos(angle * Math.PI / 180)
+            c + 25 * Math.sin(angle*Math.PI/180),
+            c - 25 * Math.cos(angle*Math.PI/180)
         );
         ctx.stroke();
+    }
 
-        ctx.restore();
+
+    // =========================
+    // RESET USER CLOCK
+    // =========================
+    function resetUserClock(){
+        selectedHour = null;
+        drawClock(uctx, null);
     }
 
 
     // =========================
     // LOCK TIMER
     // =========================
-    function startLockTimer(seconds) {
+    let lockInterval = null;
+    let lockEndTime = null;
+
+
+    function startLockTimer(seconds){
+
+        locked = true;
 
         resetUserClock();
-
-        el.dataset.locked = "1";
-        updateCursor();
 
         targetCanvas.style.opacity = "0.3";
         userCanvas.style.opacity = "0.3";
 
         lockEndTime = Date.now() + seconds * 1000;
 
-        if (lockInterval) clearInterval(lockInterval);
+        if(lockInterval) clearInterval(lockInterval);
 
-        function tick() {
+        function tick(){
 
             const diff = lockEndTime - Date.now();
 
-            if (diff <= 0) {
+            if(diff <= 0){
                 clearInterval(lockInterval);
 
-                el.dataset.locked = "0";
+                locked = false;
 
                 targetCanvas.style.opacity = "1";
                 userCanvas.style.opacity = "1";
 
                 setTimerMessage("Artık deneyebilirsiniz", "success");
 
-                updateCursor();
+                // 🔥 CRITICAL FIX: SERVER SIDE REFRESH
+                fetch("<?= admin_url('admin-ajax.php'); ?>", {
+                    method: "POST",
+                    headers: {'Content-Type':'application/x-www-form-urlencoded'},
+                    body: "action=refresh_clock&token=" + token
+                })
+                .then(r => r.json())
+                .then(d => {
+
+                    targetHour = d.hour;
+                    drawClock(tctx, targetHour);
+                });
+
                 return;
             }
 
@@ -206,80 +203,81 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     // =========================
     // INIT CLOCK
     // =========================
-    fetch("<?= admin_url('admin-ajax.php'); ?>?action=get_clock&token=" + token)
-        .then(r => r.json())
-        .then(d => {
-            if (d.hour !== undefined) {
-                drawClock(tctx, d.hour);
-            }
-        });
+    fetch("<?= admin_url('admin-ajax.php'); ?>?action=get_clock&token="+token)
+    .then(r=>r.json())
+    .then(d=>{
+        if(d.hour !== undefined){
+            targetHour = d.hour;
+            drawClock(tctx, targetHour);
+        }
+    });
 
 
     resetUserClock();
-    updateCursor();
 
 
     // =========================
-    // DRAG LOGIC
+    // USER INPUT
     // =========================
-    function updateClock(e) {
+    function updateClock(e){
 
-        if (locked || el.dataset.locked === "1") return;
+        if(locked || el.dataset.valid === "1") return;
 
         const rect = userCanvas.getBoundingClientRect();
         const x = e.clientX - rect.left - c;
         const y = e.clientY - rect.top - c;
 
-        let angle = Math.atan2(x, -y) * (180 / Math.PI);
-        if (angle < 0) angle += 360;
+        let angle = Math.atan2(x, -y) * (180/Math.PI);
+        if(angle < 0) angle += 360;
 
-        selectedHour = Math.floor((angle + 15) / 30) % 12;
+        selectedHour = Math.floor((angle+15)/30)%12;
         moveCount++;
 
         drawClock(uctx, selectedHour);
     }
 
 
-    userCanvas.addEventListener("mousedown", e => {
-        if (el.dataset.locked === "1" || el.dataset.valid === "1") return;
+    userCanvas.addEventListener("mousedown", e=>{
+        if(locked || el.dataset.valid === "1") return;
 
-        dragging = true;
         setTimerMessage("", "info");
+        dragging = true;
         updateClock(e);
     });
 
 
-    userCanvas.addEventListener("mousemove", e => {
-        if (dragging) updateClock(e);
+    userCanvas.addEventListener("mousemove", e=>{
+        if(dragging) updateClock(e);
     });
 
 
-    window.addEventListener("mouseup", () => {
+    window.addEventListener("mouseup", ()=>{
 
-        if (!dragging) return;
+        if(!dragging) return;
         dragging = false;
 
-        fetch("<?= admin_url('admin-ajax.php'); ?>", {
-            method: "POST",
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        fetch("<?= admin_url('admin-ajax.php'); ?>",{
+            method:"POST",
+            headers:{'Content-Type':'application/x-www-form-urlencoded'},
             body:
-                "action=check_clock" +
-                "&token=" + token +
-                "&hour=" + selectedHour +
-                "&moves=" + moveCount
+                "action=check_clock"+
+                "&token="+token+
+                "&hour="+selectedHour+
+                "&moves="+moveCount
         })
-        .then(r => r.json())
-        .then(res => {
+        .then(r=>r.json())
+        .then(res=>{
 
-            if (res.locked) {
+            if(res.locked){
                 startLockTimer(res.remaining || 60);
                 setTimerMessage("Kilit aktif", "error");
                 return;
             }
 
-            if (res.success) {
+            if(res.success){
 
                 el.dataset.valid = "1";
+                locked = true;
 
                 el.querySelector(".token-field").value = token;
                 el.querySelector(".hour-hidden").value = selectedHour;
@@ -287,16 +285,14 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
 
                 drawClock(uctx, selectedHour, "success");
 
-                setTimerMessage(res.message, "success");
+                userCanvas.style.pointerEvents = "none";
 
-                updateCursor();
+                setTimerMessage(res.message, "success");
 
             } else {
 
                 drawClock(uctx, selectedHour, "error");
                 setTimerMessage(res.message, "error");
-
-                updateCursor();
             }
         });
     });
@@ -306,13 +302,13 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
     // STATUS CHECK
     // =========================
     fetch("<?= admin_url('admin-ajax.php'); ?>?action=captcha_status")
-        .then(r => r.json())
-        .then(res => {
+    .then(r=>r.json())
+    .then(res=>{
 
-            if (!res.locked) return;
-
+        if(res.locked){
             startLockTimer(res.remaining || 60);
-        });
+        }
+    });
 
 });
 
@@ -320,13 +316,13 @@ document.querySelectorAll(".saat-captcha").forEach(el => {
 // =========================
 // FORM BLOCK
 // =========================
-document.addEventListener("submit", function (e) {
+document.addEventListener("submit", function(e){
 
     const c = document.querySelector(".saat-captcha");
 
-    if (!c) return;
+    if(!c) return;
 
-    if (c.dataset.valid !== "1") {
+    if(c.dataset.valid !== "1"){
         e.preventDefault();
         alert("Captcha doğrulanmadı");
     }
@@ -347,8 +343,36 @@ add_action('wp_ajax_nopriv_get_clock','get_clock');
 function get_clock(){
     $token = sanitize_text_field($_GET['token'] ?? '');
     $data = get_transient("captcha_$token");
-    if(!$data) wp_send_json_error();
+
+    if(!$data){
+        wp_send_json_error();
+    }
+
     wp_send_json(['hour'=>$data['hour']]);
+}
+
+
+/**
+ * REFRESH CLOCK (CRITICAL FIX)
+ */
+add_action('wp_ajax_refresh_clock','refresh_clock');
+add_action('wp_ajax_nopriv_refresh_clock','refresh_clock');
+
+function refresh_clock(){
+
+    $token = sanitize_text_field($_POST['token'] ?? '');
+
+    if(!$token){
+        wp_send_json_error();
+    }
+
+    $hour = rand(0,11);
+
+    set_transient("captcha_$token", ['hour'=>$hour], 600);
+
+    wp_send_json([
+        'hour'=>$hour
+    ]);
 }
 
 
@@ -377,7 +401,7 @@ function check_clock(){
 
     $lock_until = get_transient($lock_key);
 
-    if($lock_until){
+    if($lock_until && $lock_until > time()){
         wp_send_json([
             'locked'=>true,
             'remaining'=>max(0, $lock_until - time())
@@ -440,7 +464,12 @@ function captcha_status(){
     if(!$lock_until){
         wp_send_json(['locked'=>false]);
     }
-	// delete_transient($lock_key); SÜRE SIFIRLAMA
+
+    if($lock_until <= time()){
+        delete_transient($lock_key);
+        wp_send_json(['locked'=>false]);
+    }
+
     wp_send_json([
         'locked'=>true,
         'remaining'=>max(0, $lock_until - time())
